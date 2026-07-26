@@ -1,0 +1,54 @@
+# Enterprise Azure DevOps CI Pipeline for Terragrunt Landing Zone
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - modules/*
+      - terragrunt/*
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+- stage: QualityAndSecurity
+  displayName: 'Linting & Security Gate'
+  jobs:
+  - job: SecurityScan
+    steps:
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.x'
+
+    - script: |
+        curl -shttps://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+        tflint --version
+        tflint --init
+        tflint --recursive
+      displayName: 'Run TFLint'
+
+    - script: |
+        pip install checkov
+        checkov -d . --framework terraform --soft-fail
+      displayName: 'Run Checkov Security Scan'
+
+- stage: TerragruntPlan
+  displayName: 'Terragrunt Dry-Run Plan'
+  dependsOn: QualityAndSecurity
+  jobs:
+  - job: PlanDev
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'Azure-Enterprise-Service-Connection'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          wget https://github.com/gruntwork-io/terragrunt/releases/download/v0.70.0/terragrunt_linux_amd64
+          mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
+          chmod +x /usr/local/bin/terragrunt
+          cd terragrunt/dev
+          terragrunt plan
+      displayName: 'Terragrunt Plan (Dev)'

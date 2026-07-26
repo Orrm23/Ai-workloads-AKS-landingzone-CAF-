@@ -1,0 +1,26 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-azure-workload-identity
+  annotations:
+    policies.kyverno.io/title: Require Azure Workload Identity
+    policies.kyverno.io/category: Zero Trust Security
+    policies.kyverno.io/severity: critical
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-workload-identity-label
+      match:
+        any:
+        - resources:
+            kinds:
+              - ServiceAccount
+            namespaces:
+              - ai-workloads
+      validate:
+        message: "ServiceAccounts in 'ai-workloads' namespace must be annotated with Azure Workload Identity Client ID."
+        pattern:
+          metadata:
+            annotations:
+              azure.workload.identity/client-id: "?*"

@@ -1,0 +1,101 @@
+name: "Terragrunt DevSecOps CI Pipeline"
+
+on:
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'modules/**'
+      - 'terragrunt/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-and-lint:
+    name: "Validate, Lint & Security Scan"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.0
+
+      - name: Setup Terragrunt
+        uses: autorun/setup-terragrunt@v2
+        with:
+          terragrunt-version: 0.70.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terragrunt HCL Format Check
+        run: terragrunt hclfmt --terragrunt-check
+
+      - name: TFLint Static Analysis
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.0
+
+      - name: Run TFLint
+        run: |
+          tflint --init
+          tflint --recursive
+
+      - name: Checkov Infrastructure Security Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          framework: terraform
+          output_format: cli
+          soft_fail: true
+
+      - name: tfsec Security Scan
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          soft_fail: true
+
+      - name: Infracost Cost Estimation
+        uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generate Infracost Cost Breakdown
+        run: |
+          infracost breakdown --path=terragrunt/dev --format=json --out-file=/tmp/infracost.json
+        continue-on-error: true
+
+  terragrunt-plan:
+    name: "Terragrunt Plan Across Environments"
+    needs: validate-and-lint
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        environment: [dev, test, uat, prod]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Federated Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terragrunt
+        uses: autorun/setup-terragrunt@v2
+        with:
+          terragrunt-version: 0.70.0
+
+      - name: Terragrunt Plan (${{ matrix.environment }})
+        run: |
+          cd terragrunt/${{ matrix.environment }}
+          terragrunt plan -no-color

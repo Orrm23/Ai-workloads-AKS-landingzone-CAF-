@@ -1,0 +1,38 @@
+# Enterprise Azure DevOps CD Deployment Pipeline
+
+trigger: none
+
+parameters:
+- name: environment
+  displayName: Target Deployment Environment
+  type: string
+  default: dev
+  values:
+  - dev
+  - test
+  - uat
+  - prod
+
+stages:
+- stage: DeployInfrastructure
+  displayName: 'Deploy Infrastructure via Terragrunt'
+  jobs:
+  - deployment: ApplyTerragrunt
+    environment: ${{ parameters.environment }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: 'Azure-Enterprise-Service-Connection'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                wget https://github.com/gruntwork-io/terragrunt/releases/download/v0.70.0/terragrunt_linux_amd64
+                mv terragrunt_linux_amd64 /usr/local/bin/terragrunt
+                chmod +x /usr/local/bin/terragrunt
+                cd terragrunt/${{ parameters.environment }}
+                terragrunt apply -auto-approve
+            displayName: 'Terragrunt Apply (${{ parameters.environment }})'
