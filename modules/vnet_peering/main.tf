@@ -1,0 +1,32 @@
+# VNet Peering Child Module
+# Provisions bidirectional peering between Hub and Spoke Virtual Networks with gateway transit options
+
+resource "azurerm_virtual_network_peering" "hub_to_spoke" {
+  name                         = "peer-${var.hub_vnet_name}-to-${var.spoke_vnet_name}"
+  resource_group_name          = var.hub_resource_group_name
+  virtual_network_name         = var.hub_vnet_name
+  remote_virtual_network_id    = var.spoke_vnet_id
+  allow_virtual_network_access = true
+  allow_forwarded_traffic      = true
+  allow_gateway_transit        = var.allow_gateway_transit
+}
+
+resource "azurerm_virtual_network_peering" "spoke_to_hub" {
+  name                         = "peer-${var.spoke_vnet_name}-to-${var.hub_vnet_name}"
+  resource_group_name          = var.spoke_resource_group_name
+  virtual_network_name         = var.spoke_vnet_name
+  remote_virtual_network_id    = var.hub_vnet_id
+  allow_virtual_network_access = true
+  allow_forwarded_traffic      = true
+  use_remote_gateways          = var.use_remote_gateways
+}
+
+output "hub_to_spoke_id" {
+  description = "Hub to Spoke Peering ID"
+  value       = azurerm_virtual_network_peering.hub_to_spoke.id
+}
+
+output "spoke_to_hub_id" {
+  description = "Spoke to Hub Peering ID"
+  value       = azurerm_virtual_network_peering.spoke_to_hub.id
+}

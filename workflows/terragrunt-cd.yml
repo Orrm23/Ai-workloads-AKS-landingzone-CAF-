@@ -1,0 +1,53 @@
+name: "Terragrunt Deployment CD Pipeline"
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'modules/**'
+      - 'terragrunt/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target Environment to Apply'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - test
+          - uat
+          - prod
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terragrunt-apply:
+    name: "Terragrunt Apply"
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Azure Federated Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terragrunt
+        uses: autorun/setup-terragrunt@v2
+        with:
+          terragrunt-version: 0.70.0
+
+      - name: Terragrunt Apply
+        run: |
+          ENV="${{ github.event.inputs.environment || 'dev' }}"
+          echo "Deploying infrastructure to environment: $ENV"
+          cd terragrunt/$ENV
+          terragrunt apply -auto-approve -no-color

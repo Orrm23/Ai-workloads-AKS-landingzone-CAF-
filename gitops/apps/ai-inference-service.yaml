@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-inference-service
+  namespace: ai-workloads
+  labels:
+    app: llm-inference
+    azure.workload.identity/use: "true"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: llm-inference
+  template:
+    metadata:
+      labels:
+        app: llm-inference
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: ai-service-account
+      nodeSelector:
+        accelerator: nvidia-gpu
+      tolerations:
+        - key: "sku"
+          operator: "Equal"
+          value: "gpu"
+          effect: "NoSchedule"
+      containers:
+        - name: vllm-server
+          image: alzcontainerregistry.azurecr.io/ai/vllm-openai:v0.6.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+              memory: 32Gi
+              cpu: "8"
+            requests:
+              nvidia.com/gpu: 1
+              memory: 16Gi
+              cpu: "4"
+          env:
+            - name: AZURE_OPENAI_ENDPOINT
+              value: "https://cog-alz-ai-prod-eus.openai.azure.com/"
+            - name: MODEL_NAME
+              value: "gpt-4o"
+          ports:
+            - containerPort: 8000
+              name: http
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: llm-inference-scaler
+  namespace: ai-workloads
+spec:
+  scaleTargetRef:
+    name: llm-inference-service
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  cooldownPeriod: 300
+  pollingInterval: 15
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://ama-metrics-prometheus:9090
+        metricName: http_requests_pending
+        query: sum(rate(vllm_request_prompt_tokens_count[2m]))
+        threshold: '100'
